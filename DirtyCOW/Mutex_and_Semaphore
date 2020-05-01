@@ -1,0 +1,207 @@
+DESCRIPTION of MUTEX(mutual exclusion)
+---------------------------------------
+In computer science, mutual exclusion is a property of concurrency control, which is instituted for the purpose of preventing race conditions; it is the requirement that one thread of execution never enters its critical section at the same time that another concurrent thread of execution enters its own critical section.
+
+EX:~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+When I am having a big heated discussion at work, I use a rubber chicken which I keep in my desk for just such occasions. The person holding the chicken is the only person who is allowed to talk. If you don't hold the chicken you cannot speak. You can only indicate that you want the chicken and wait until you get it before you speak. Once you have finished speaking, you can hand the chicken back to the moderator who will hand it to the next person to speak. This ensures that people do not speak over each other, and also have their own space to talk.
+Replace Chicken with Mutex and person with thread and you basically have the concept of a mutex.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+How to Use C Mutex Lock Examples for Linux Thread Synchronization
+-----------------------------------------------------------------
+
+-Thread Synchronization Problems
+
+Lets take an example code to study synchronization problems :
+
+#include<stdio.h>
+#include<string.h>
+#include<pthread.h>
+#include<stdlib.h>
+#include<unistd.h>
+
+pthread_t tid[2];
+int counter;
+
+void* doSomeThing(void *arg)
+{
+    unsigned long i = 0;
+    counter += 1;
+    printf("\n Job %d started\n", counter);
+
+    for(i=0; i<(0xFFFFFFFF);i++);
+    printf("\n Job %d finished\n", counter);
+
+    return NULL;
+}
+
+int main(void)
+{
+    int i = 0;
+    int err;
+
+    while(i < 2)
+    {
+        err = pthread_create(&(tid[i]), NULL, &doSomeThing, NULL);
+        if (err != 0)
+            printf("\ncan't create thread :[%s]", strerror(err));
+        i++;
+    }
+
+    pthread_join(tid[0], NULL);
+    pthread_join(tid[1], NULL);
+
+    return 0;
+}
+
+The above code is a simple one in which two threads(jobs) are created and in the start function of these threads, a counter is maintained through which user gets the logs about job number which is started and when it is completed. The code and the flow looks fine but when we see the output :
+
+	$ ./tgsthreads
+	Job 1 started
+	Job 2 started
+	Job 2 finished
+	Job 2 finished
+
+If you focus on the last two logs, you will see that the log ‘Job 2 finished’ is repeated twice while no log for ‘Job 1 finished’ is seen.
+
+Now, if you go back at the code and try to find any logical flaw, you’ll probably not find any flaw easily. But if you’ll have a closer look and visualize  the execution of the code, you’ll find that :
+
+    The log ‘Job 2 started’ is printed just after ‘Job 1 Started’  so it can easily be concluded that while thread 1 was processing the scheduler scheduled the thread 2.
+    If the above assumption was true then the value of the ‘counter’ variable got incremented again before job 1 got finished.
+    So, when Job 1 actually got finished, then the wrong value of counter produced the log ‘Job 2 finished’ followed by the ‘Job 2 finished’  for the actual job 2 or vice versa as it is dependent on scheduler.
+    So we see that its not the repetitive log but the wrong value of the ‘counter’ variable that is the problem.
+
+The actual problem was the usage of the variable ‘counter’ by second thread when the first thread was using or about to use it. In other words we can say that lack of synchronization between the threads while using the shared resource ‘counter’ caused the problems or in one word we can say that this problem happened due to ‘Synchronization problem’ between two threads.
+
+
+MUTEX
+--------
+
+Now since we have understood the base problem, lets discuss the solution to it. The most popular way of achieving thread synchronization is by using Mutexes.
+
+A Mutex is a lock that we set before using a shared resource and release after using it. When the lock is set, no other thread can access the locked region of code. So we see that even if thread 2 is scheduled while thread 1 was not done accessing the shared resource and the code is locked by thread 1 using mutexes then thread 2 cannot even access that region of code. So this ensures a synchronized access of shared resources in the code.
+
+Internally it works as follows :
+
+   - Suppose one thread has locked a region of code using mutex and is executing that piece of code.
+   - Now if scheduler decides to do a context switch, then all the other threads which are ready to execute the same region are unblocked.
+   -  Only one of all the threads would make it to the execution but if this thread tries to execute the same region of code that is already locked then it will again go to sleep.
+   - Context switch will take place again and again but no thread would be able to execute the locked region of code until the mutex lock over it is released.
+   - Mutex lock will only be released by the thread who locked it.
+   - So this ensures that once a thread has locked a piece of code then no other thread can execute the same region until it is unlocked by the thread who locked it.
+   - Hence, this system ensures synchronization among the threads while working on shared resources.
+
+A mutex is initialized and then a lock is achieved by calling the following two functions :
+
+	int pthread_mutex_init(pthread_mutex_t *restrict mutex, const pthread_mutexattr_t *restrict attr);
+	int pthread_mutex_lock(pthread_mutex_t *mutex);
+
+The first function initializes a mutex and through second function any critical region in the code can be locked.
+
+The mutex can be unlocked and destroyed by calling following functions :
+
+	int pthread_mutex_unlock(pthread_mutex_t *mutex);
+	int pthread_mutex_destroy(pthread_mutex_t *mutex);
+
+The first function above releases the lock and the second function destroys the lock so that it cannot be used anywhere in future.
+A Practical Example
+
+Lets see a piece of code where mutexes are used for thread synchronization
+
+#include<stdio.h>
+#include<string.h>
+#include<pthread.h>
+#include<stdlib.h>
+#include<unistd.h>
+
+pthread_t tid[2];
+int counter;
+pthread_mutex_t lock;
+
+void* doSomeThing(void *arg)
+{
+    pthread_mutex_lock(&lock);
+
+    unsigned long i = 0;
+    counter += 1;
+    printf("\n Job %d started\n", counter);
+
+    for(i=0; i<(0xFFFFFFFF);i++);
+
+    printf("\n Job %d finished\n", counter);
+
+    pthread_mutex_unlock(&lock);
+
+    return NULL;
+}
+
+int main(void)
+{
+    int i = 0;
+    int err;
+
+    if (pthread_mutex_init(&lock, NULL) != 0)
+    {
+        printf("\n mutex init failed\n");
+        return 1;
+    }
+
+    while(i < 2)
+    {
+        err = pthread_create(&(tid[i]), NULL, &doSomeThing, NULL);
+        if (err != 0)
+            printf("\ncan't create thread :[%s]", strerror(err));
+        i++;
+    }
+
+    pthread_join(tid[0], NULL);
+    pthread_join(tid[1], NULL);
+    pthread_mutex_destroy(&lock);
+
+    return 0;
+}
+
+In the code above :
+
+    A mutex is initialized in the beginning of the main function.
+    The same mutex is locked in the ‘doSomeThing()’ function while using the shared resource ‘counter’
+    At the end of the function ‘doSomeThing()’ the same mutex is unlocked.
+    At the end of the main function when both the threads are done, the mutex is destroyed.
+
+Now if we look at the output, we find :
+
+	$ ./threads
+	Job 1 started
+	Job 1 finished
+	Job 2 started
+	Job 2 finished
+
+So we see that this time the start and finish logs of both the jobs were present. So thread synchronization took place by the use of Mutex.
+
+___________________________________________________
+kaynakca: 
+https://www.thegeekstuff.com/2012/05/c-mutex-examples/?refcom
+
+
+
+
+
+
+DIFFERENCE BETWEEN SEMAPHORE AND MUTEX
+--------------------------------------
+
+
+Semaphore can be counted, while mutex can only count to 1.
+
+Suppose you have a thread running which accepts client connections. This thread can handle 10 clients simultaneously. Then each new client sets the semaphore until it reaches 10. When the Semaphore has 10 flags, then your thread won't accept new connections
+
+Mutex are usually used for guarding stuff. Suppose your 10 clients can access multiple parts of the system. Then you can protect a part of the system with a mutex so when 1 client is connected to that sub-system, no one else should have access. You can use a Semaphore for this purpose too. A mutex is a "Mutual Exclusion Semaphore".
+
+
+Semaphores have no notion of ownership, this means that any thread can release a semaphore (this can lead to many problems in itself but can help with "death detection"). Whereas a mutex does have the concept of ownership (i.e. you can only release a mutex you have acquired).
+Ownership is incredibly important for safe programming of concurrent systems. 
+________________________________________________________
+kaynakca: 
+https://stackoverflow.com/questions/771347/what-is-mutex-and-semaphore-in-java-what-is-the-main-difference
